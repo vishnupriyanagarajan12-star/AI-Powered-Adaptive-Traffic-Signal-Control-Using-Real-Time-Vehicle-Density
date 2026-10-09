@@ -1,0 +1,139 @@
+import argparse
+import random
+import time
+
+import cv2
+
+VEHICLE_CLASSES = {2 car, 3 motorbike, 5 bus, 7 truck}   # COCO ids
+WEIGHTS = {car 1.0, motorbike 0.5, bus 2.5, truck 2.5}
+LANES = [North, East, South, West]
+
+MIN_GREEN = 10
+MAX_GREEN = 60
+YELLOW = 3
+SEC_PER_UNIT = 2.0
+MAX_WAIT = 120
+
+
+class Detector
+    def __init__(self, model_path=yolov8n.pt, conf=0.35)
+        from ultralytics import YOLO
+        self.model = YOLO(model_path)
+        self.conf = conf
+
+    def density(self, frame)
+        res = self.model(frame, conf=self.conf, verbose=False)[0]
+        score = 0.0
+        for box in res.boxes
+            cls = int(box.cls[0])
+            if cls in VEHICLE_CLASSES
+                score += WEIGHTS[VEHICLE_CLASSES[cls]]
+        return score, res.plot()
+
+
+class Simulator
+    def __init__(self)
+        self.base = [random.randint(2, 20) for _ in LANES]
+
+    def density(self, lane)
+        self.base[lane] = max(0, self.base[lane] + random.randint(-2, 4))
+        return float(self.base[lane])
+
+
+def green_time(density)
+    return int(max(MIN_GREEN, min(MAX_GREEN, MIN_GREEN + density  SEC_PER_UNIT)))
+
+
+def pick_next(densities, last_served, current)
+    now = time.time()
+    candidates = [i for i in range(len(LANES)) if i != current]
+    starved = [i for i in candidates if now - last_served[i]  MAX_WAIT]
+    if starved
+        return max(starved, key=lambda i now - last_served[i])
+    return max(candidates, key=lambda i densities[i])
+
+
+def send_serial(ser, msg)
+    if ser
+        ser.write((msg + n).encode())
+
+
+def main()
+    ap = argparse.ArgumentParser()
+    ap.add_argument(--sources, nargs=4)
+    ap.add_argument(--simulate, action=store_true)
+    ap.add_argument(--serial)
+    ap.add_argument(--show, action=store_true)
+    args = ap.parse_args()
+
+    ser = None
+    if args.serial
+        import serial
+        ser = serial.Serial(args.serial, 9600, timeout=1)
+        time.sleep(2)
+
+    caps, det, sim = None, None, None
+    if args.simulate or not args.sources
+        sim = Simulator()
+        print([mode] simulation)
+    else
+        det = Detector()
+        caps = [cv2.VideoCapture(int(s) if s.isdigit() else s) for s in args.sources]
+        print([mode] live detection)
+
+    def read_density(i)
+        if sim
+            return sim.density(i)
+        ok, frame = caps[i].read()
+        if not ok
+            caps[i].set(cv2.CAP_PROP_POS_FRAMES, 0)
+            ok, frame = caps[i].read()
+            if not ok
+                return 0.0
+        d, annotated = det.density(frame)
+        if args.show
+            cv2.putText(annotated, f{LANES[i]} density={d.1f}, (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2)
+            cv2.imshow(LANES[i], annotated)
+            cv2.waitKey(1)
+        return d
+
+    last_served = [time.time()]  len(LANES)
+    current = 0
+    try
+        while True
+            densities = [read_density(i) for i in range(len(LANES))]
+            g = green_time(densities[current])
+            print(fnGREEN - {LANES[current]} for {g}s  densities=
+                  f{ {LANES[i] round(densities[i], 1) for i in range(4)} })
+            send_serial(ser, fG{current})
+
+            t0 = time.time()
+            while time.time() - t0  g
+                time.sleep(1)
+                d = read_density(current)
+                if time.time() - t0 = MIN_GREEN and d  1
+                    print(f  lane {LANES[current]} empty, ending green early)
+                    break
+
+            print(fYELLOW - {LANES[current]} ({YELLOW}s))
+            send_serial(ser, fY{current})
+            time.sleep(YELLOW)
+            send_serial(ser, fR{current})
+            last_served[current] = time.time()
+
+            densities = [read_density(i) for i in range(len(LANES))]
+            current = pick_next(densities, last_served, current)
+    except KeyboardInterrupt
+        print(nStopped.)
+    finally
+        if caps
+            for c in caps
+                c.release()
+        cv2.destroyAllWindows()
+        if ser
+            ser.close()
+
+
+if __name__ == __main__
+    main()
